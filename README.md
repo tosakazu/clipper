@@ -4,7 +4,7 @@
 
 ### Ubuntu
 ```
-sudo bash setup.sh
+sudo apt update && sudo bash setup.sh
 ```
 
 ## 起動
