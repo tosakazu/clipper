@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マルチストリームビューア</title>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        html, body, #root {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .stream-grid {
+            display: grid;
+            width: 100vw;
+            height: 100vh;
+            gap: 2px;
+            background-color: #1a1a1a;
+            padding: 2px;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+        }
+        .stream-container {
+            position: relative;
+            background: #000;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .fullscreen {
+            grid-column: 1 / -1;
+            grid-row: 1 / -1;
+            z-index: 20;
+        }
+        .url-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .stream-container:hover .url-input {
+            opacity: 1;
+        }
+        .stream-content {
+            position: relative;
+            width: 100%;
+            flex-grow: 1;
+            aspect-ratio: 16/9;
+            margin: auto;
+        }
+        .stream-frame {
+            width: 100%;
+            height: 100%;
+        }
+        .recording-indicator {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: red;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function App() {
+            const [streams, setStreams] = React.useState([
+                { id: 1, type: '', url: '', isFullscreen: false, isRecording: false },
+                { id: 2, type: '', url: '', isFullscreen: false, isRecording: false },
+                { id: 3, type: '', url: '', isFullscreen: false, isRecording: false },
+                { id: 4, type: '', url: '', isFullscreen: false, isRecording: false }
+            ]);
+            
+            const [streamStatuses, setStreamStatuses] = React.useState({});
+            const [isLoaded, setIsLoaded] = React.useState(false);
+
+            // 状態を復元する関数
+            const loadStreams = async () => {
+                try {
+                    const response = await fetch('/api/streams');
+                    const data = await response.json();
+                    
+                    if (data.streams) {
+                        const updatedStreams = streams.map(stream => {
+                            const savedStream = data.streams[stream.id.toString()];
+                            if (savedStream) {
+                                return {
+                                    ...stream,
+                                    url: savedStream.url,
+                                    type: savedStream.url.includes('youtube') ? 'youtube' : 
+                                          savedStream.url.includes('twitch') ? 'twitch' : '',
+                                    isRecording: savedStream.is_recording
+                                };
+                            }
+                            return stream;
+                        });
+                        setStreams(updatedStreams);
+                    }
+                } catch (error) {
+                    console.error('Failed to load streams:', error);
+                } finally {
+                    setIsLoaded(true);
+                }
+            };
+
+            // 録画状態を更新する関数
+            const updateRecordingStatuses = async () => {
+                for (const stream of streams) {
+                    if (stream.isRecording) {
+                        try {
+                            const response = await fetch(`/api/recording-status/${stream.id}`);
+                            const status = await response.json();
+                            setStreamStatuses(prev => ({
+                                ...prev,
+                                [stream.id]: status
+                            }));
+                        } catch (error) {
+                            console.error('Failed to fetch recording status:', error);
+                        }
+                    }
+                }
+            };
+
+            // 初期ロード時に状態を復元
+            React.useEffect(() => {
+                loadStreams();
+            }, []);
+
+            // 定期的に録画状態を更新
+            React.useEffect(() => {
+                const intervalId = setInterval(updateRecordingStatuses, 5000);
+                return () => clearInterval(intervalId);
+            }, [streams]);
+
+            const handleUrlChange = async (id, value) => {
+                const updatedStream = { 
+                    ...streams.find(s => s.id === id),
+                    url: value,
+                    type: value.includes('youtube') ? 'youtube' : value.includes('twitch') ? 'twitch' : ''
+                };
+                
+                if (updatedStream.isRecording) {
+                    // URL 変更前に録画停止
+                    await fetch('/api/stop-recording', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            url: updatedStream.url,
+                            window_id: updatedStream.id
+                        })
+                    });
+                }
+                
+                setStreams(streams.map(stream => 
+                    stream.id === id ? updatedStream : stream
+                ));
+            };
+
+            const toggleFullscreen = (id) => {
+                setStreams(streams.map(stream => ({
+                    ...stream,
+                    isFullscreen: stream.id === id ? !stream.isFullscreen : false
+                })));
+            };
+
+            const toggleRecording = async (id) => {
+                const stream = streams.find(s => s.id === id);
+                if (!stream.url) return;
+
+                const endpoint = stream.isRecording ? '/api/stop-recording' : '/api/start-recording';
+                
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            url: stream.url,
+                            window_id: id
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.status === "started" || data.status === "stopped") {
+                        setStreams(streams.map(s => 
+                            s.id === id ? { ...s, isRecording: !s.isRecording } : s
+                        ));
+                    }
+                } catch (error) {
+                    console.error('Recording error:', error);
+                }
+            };
+
+            const createClip = async (id) => {
+                const stream = streams.find(s => s.id === id);
+                if (!stream.isRecording) return;
+
+                try {
+                    const response = await fetch('/api/create-clip', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            url: stream.url,
+                            window_id: id,
+                            duration: 3  // 3分クリップ
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        const clipPath = data.clip_path;
+                        window.open(`/static/clip-editor.html?clipPath=${clipPath}`, '_blank');
+                    }
+                } catch (error) {
+                    console.error('Clip creation error:', error);
+                }
+            };
+
+            const getEmbedUrl = (stream) => {
+                if (!stream.url) return '';
+                
+                if (stream.type === 'youtube') {
+                    let videoId = '';
+                    const watchMatch = stream.url.match(/[?&]v=([^&]+)/);
+                    const shortMatch = stream.url.match(/youtu\.be\/([^?&]+)/);
+                    videoId = watchMatch ? watchMatch[1] : shortMatch ? shortMatch[1] : '';
+                    return videoId ? `https://www.youtube.com/embed/${videoId}?controls=1&rel=0&modestbranding=1` : '';
+                }
+                
+                if (stream.type === 'twitch') {
+                    const channelMatch = stream.url.match(/twitch\.tv\/([^/?&]+)/);
+                    const channel = channelMatch ? channelMatch[1] : '';
+                    return channel ? `https://player.twitch.tv/?channel=${channel}&parent=${window.location.hostname}` : '';
+                }
+                
+                return '';
+            };
+
+            return (
+                <div className="stream-grid">
+                    {streams.map((stream) => (
+                        <div
+                            key={stream.id}
+                            className={`stream-container ${stream.isFullscreen ? 'fullscreen' : ''}`}
+                        >
+                            <div className="url-input">
+                                <div className="flex gap-2 mb-2">
+                                    <input
+                                        type="text"
+                                        value={stream.url}
+                                        onChange={(e) => handleUrlChange(stream.id, e.target.value)}
+                                        placeholder="YouTube または Twitch の URL を入力"
+                                        className="flex-grow p-2 bg-gray-800 text-white rounded border border-gray-700"
+                                    />
+                                    <button
+                                        onClick={() => toggleFullscreen(stream.id)}
+                                        className="p-2 bg-gray-800 text-white rounded hover:bg-gray-700"
+                                    >
+                                        {stream.isFullscreen ? "縮小" : "拡大"}
+                                    </button>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        className={`flex-1 p-2 ${stream.isRecording ? 'bg-gray-600' : 'bg-red-600'} text-white rounded hover:${stream.isRecording ? 'bg-gray-700' : 'bg-red-700'}`}
+                                        onClick={() => toggleRecording(stream.id)}
+                                    >
+                                        {stream.isRecording ? '録画停止' : '録画開始'}
+                                    </button>
+                                    <button
+                                        className={`flex-1 p-2 bg-purple-600 text-white rounded hover:bg-purple-700 ${!stream.isRecording && 'opacity-50 cursor-not-allowed'}`}
+                                        onClick={() => createClip(stream.id)}
+                                        disabled={!stream.isRecording}
+                                    >
+                                        Clip!
+                                    </button>
+                                </div>
+                            </div>
+
+                            {stream.isRecording && streamStatuses[stream.id] && (
+                                <div className="absolute top-2 right-2 z-20 bg-black bg-opacity-70 p-2 rounded text-white text-sm">
+                                    <div className="recording-indicator mb-1" />
+                                    <div>録画中: {Math.round(streamStatuses[stream.id].total_size_mb)}MB</div>
+                                    <div>セグメント: {streamStatuses[stream.id].segment_count}</div>
+                                    <div className="text-xs">
+                                        最終更新: {
+                                            streamStatuses[stream.id].last_segment_time ?
+                                            new Date(streamStatuses[stream.id].last_segment_time).toLocaleTimeString() :
+                                            '更新待ち'
+                                        }
+                                    </div>
+                                </div>
+                            )}
+
+                            {stream.url && isLoaded && (
+                                <div className="stream-content">
+                                    <iframe
+                                        src={getEmbedUrl(stream)}
+                                        className="stream-frame"
+                                        allowFullScreen
+                                        frameBorder="0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

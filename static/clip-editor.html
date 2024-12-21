@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>クリップエディター</title>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+  <style>
+    body, html, #root {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100vh;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .dual-range {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      background: #000;
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+    video {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .dual-range {
+      position: relative;
+      width: 100%;
+      height: 40px;
+    }
+    .slider-track {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 6px;
+      width: 100%;
+      background: #4B5563;
+      border-radius: 3px;
+    }
+    .slider-range {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 6px;
+      background: #3B82F6;
+      border-radius: 3px;
+    }
+    .slider-thumb {
+      position: absolute;
+      top: 50%;
+      width: 18px;
+      height: 18px;
+      background: #3B82F6;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 2;
+    }
+    .slider-thumb:hover {
+      background: #2563EB;
+    }
+    .slider-thumb.start {
+      left: 0;
+    }
+    .slider-thumb.end {
+      right: 0;
+    }
+    .select-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+    .select-wrapper select {
+      appearance: none;
+      background: #374151;
+      border: 1px solid #4B5563;
+      border-radius: 0.375rem;
+      padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+      color: white;
+      cursor: pointer;
+      outline: none;
+    }
+    .select-wrapper::after {
+      content: '';
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid #9CA3AF;
+      pointer-events: none;
+    }
+    .time-label {
+      position: absolute;
+      top: -20px;
+      transform: translateX(-50%);
+      font-size: 0.875rem;
+      color: #9CA3AF;
+      white-space: nowrap;
+    }
+    .control-buttons {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .button-group {
+      display: flex;
+      gap: 4px;
+    }
+    .button-group button {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const QUALITY_OPTIONS = [
+      { value: "default", label: "画質変更なし" },
+      { value: "1080p", label: "Full HD (1080p)" },
+      { value: "720p", label: "HD (720p)" },
+      { value: "480p", label: "SD (480p)" },
+      { value: "360p", label: "低画質 (360p)" },
+      { value: "240p", label: "最低画質 (240p)" },
+    ];
+
+    function DualRangeSlider({ min, max, startValue, endValue, onChange }) {
+      const trackRef = useRef(null);
+      const [isDragging, setIsDragging] = useState(null);
+      const [positions, setPositions] = useState({ start: 0, end: 100 });
+
+      useEffect(() => {
+        const percentage = (value, minVal = min, maxVal = max) => 
+          ((value - minVal) / (maxVal - minVal)) * 100;
+
+        setPositions({
+          start: percentage(startValue),
+          end: percentage(endValue)
+        });
+      }, [startValue, endValue, min, max]);
+
+      const handleMouseDown = (e, type) => {
+        setIsDragging(type);
+      };
+
+      useEffect(() => {
+        const handleMouseUp = () => {
+          setIsDragging(null);
+        };
+
+        const handleMouseMove = (e) => {
+          if (!isDragging || !trackRef.current) return;
+
+          const rect = trackRef.current.getBoundingClientRect();
+          const percentage = Math.min(Math.max(
+            ((e.clientX - rect.left) / rect.width) * 100,
+            0
+          ), 100);
+
+          const value = (percentage / 100) * (max - min) + min;
+
+          if (isDragging === 'start' && value < endValue) {
+            onChange({ startTime: value, endTime: endValue });
+          } else if (isDragging === 'end' && value > startValue) {
+            onChange({ startTime: startValue, endTime: value });
+          }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+          document.removeEventListener('mousemove', handleMouseMove);
+          document.removeEventListener('mouseup', handleMouseUp);
+        };
+      }, [isDragging, startValue, endValue, min, max, onChange]);
+
+      return (
+        <div className="dual-range">
+          <div ref={trackRef} className="slider-track">
+            <div 
+              className="slider-range"
+              style={{
+                left: `${positions.start}%`,
+                right: `${100 - positions.end}%`
+              }}
+            />
+          </div>
+          <div 
+            className="slider-thumb start"
+            style={{ left: `${positions.start}%` }}
+            onMouseDown={(e) => handleMouseDown(e, 'start')}
+          >
+            <span className="time-label">{startValue.toFixed(1)}秒</span>
+          </div>
+          <div 
+            className="slider-thumb end"
+            style={{ left: `${positions.end}%` }}
+            onMouseDown={(e) => handleMouseDown(e, 'end')}
+          >
+            <span className="time-label">{endValue.toFixed(1)}秒</span>
+          </div>
+        </div>
+      );
+    }
+
+    function ClipEditor() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const clipPath = urlParams.get("clipPath");
+      const videoUrl = clipPath ? `/clips/${clipPath}` : "";
+      
+      const videoRef = useRef(null);
+      const [duration, setDuration] = useState(0);
+      const [startTime, setStartTime] = useState(0);
+      const [endTime, setEndTime] = useState(0);
+      const [quality, setQuality] = useState("default");
+      const [isRangePlayback, setIsRangePlayback] = useState(false);
+
+      useEffect(() => {
+        if (videoRef.current) {
+          const videoEl = videoRef.current;
+          const handleLoadedMetadata = () => {
+            setDuration(videoEl.duration);
+            setEndTime(videoEl.duration);
+          };
+          videoEl.addEventListener("loadedmetadata", handleLoadedMetadata);
+          return () => {
+            videoEl.removeEventListener("loadedmetadata", handleLoadedMetadata);
+          };
+        }
+      }, [videoRef]);
+
+      useEffect(() => {
+        if (videoRef.current && isRangePlayback) {
+          const handleTimeUpdate = () => {
+            if (videoRef.current.currentTime >= endTime) {
+              videoRef.current.currentTime = startTime;
+            }
+          };
+
+          videoRef.current.addEventListener('timeupdate', handleTimeUpdate);
+          return () => {
+            if (videoRef.current) {
+              videoRef.current.removeEventListener('timeupdate', handleTimeUpdate);
+            }
+          };
+        }
+      }, [isRangePlayback, startTime, endTime]);
+
+      const handleTimeRangeChange = ({ startTime: newStart, endTime: newEnd }) => {
+        setStartTime(newStart);
+        setEndTime(newEnd);
+      };
+
+      const handleSeek = (time) => {
+        if (videoRef.current) {
+          videoRef.current.currentTime = time;
+        }
+      };
+
+      const handleSetStartTime = () => {
+        if (videoRef.current) {
+          const currentTime = videoRef.current.currentTime;
+          if (currentTime < endTime) {
+            setStartTime(currentTime);
+          }
+        }
+      };
+
+      const handleSetEndTime = () => {
+        if (videoRef.current) {
+          const currentTime = videoRef.current.currentTime;
+          if (currentTime > startTime) {
+            setEndTime(currentTime);
+          }
+        }
+      };
+
+      const handleRangePlayback = () => {
+        if (videoRef.current) {
+          if (!isRangePlayback) {
+            videoRef.current.currentTime = startTime;
+            videoRef.current.play();
+          } else {
+            videoRef.current.pause();
+          }
+          setIsRangePlayback(!isRangePlayback);
+        }
+      };
+
+      const handleTrim = async () => {
+        if (!clipPath) return;
+
+        const timestamp = new Date().getTime();
+        const outputName = `trimmed_${timestamp}.mp4`;
+
+        try {
+          const response = await fetch('/api/trim-clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clip_path: clipPath,
+              start_time: startTime,
+              end_time: endTime,
+              quality: quality,
+              output_name: outputName
+            })
+          });
+
+          const data = await response.json();
+          if (data.status === "success") {
+            window.open(`/trimmed/${outputName}`, '_blank');
+          } else {
+            alert("トリミングに失敗しました");
+          }
+        } catch (error) {
+          console.error("Trimming error:", error);
+          alert("エラーが発生しました");
+        }
+      };
+
+      if (!clipPath) {
+        return (
+          <div className="container">
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h1 className="text-2xl font-bold text-red-500">エラー</h1>
+              <p>clipPath が指定されていません。</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="container">
+          <div className="bg-gray-800 rounded-lg p-6">
+            <div className="video-wrapper mb-2">
+              <video 
+                ref={videoRef} 
+                src={videoUrl} 
+                controls 
+              />
+            </div>
+
+            <div className="control-buttons">
+              <div className="button-group">
+                <button 
+                  onClick={handleSetStartTime}
+                  className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded text-sm transition-colors"
+                >
+                  開始点に設定
+                </button>
+                <button 
+                  onClick={() => handleSeek(startTime)}
+                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm transition-colors"
+                >
+                  開始点へ
+                </button>
+              </div>
+              
+              <button 
+                className={`${
+                  isRangePlayback ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                } px-4 py-1.5 rounded text-sm transition-colors`}
+                onClick={handleRangePlayback}
+              >
+                {isRangePlayback ? '範囲再生停止' : '範囲再生'}
+              </button>
+
+              <div className="button-group">
+                <button 
+                  onClick={handleSetEndTime}
+                  className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded text-sm transition-colors"
+                >
+                  終了点に設定
+                </button>
+                <button 
+                  onClick={() => handleSeek(endTime)}
+                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm transition-colors"
+                >
+                  終了点へ
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="mb-8 mt-12">
+                <DualRangeSlider
+                  min={0}
+                  max={duration}
+                  startValue={startTime}
+                  endValue={endTime}
+                  onChange={handleTimeRangeChange}
+                />
+              </div>
+
+              <div className="flex gap-4 items-center">
+              <div className="select-wrapper">
+                  <select
+                    value={quality}
+                    onChange={(e) => setQuality(e.target.value)}
+                    className="w-48"
+                  >
+                    {QUALITY_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button 
+                  className="flex-1 bg-green-600 hover:bg-green-700 py-3 rounded-lg font-medium transition-colors"
+                  onClick={handleTrim}
+                >
+                  トリミング
+                </button>
+              </div>
+              </div>
+          </div>
+        </div>
+      );
+    }
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ClipEditor />);
+  </script>
+</body>
+</html>
