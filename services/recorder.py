@@ -12,10 +12,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class StreamRecorder:
-    def __init__(self, url: str, base_dir: str, buffer_minutes: int = 10):
+    def __init__(self, url: str, base_dir: str, buffer_minutes: int = 10, quality: str = "best"):
         self.url = url
         self.base_dir = base_dir
         self.buffer_minutes = buffer_minutes
+        self.quality = quality
         self.segments_dir = os.path.join(base_dir, "segments")
         self.is_recording = False
         self.stream_process: Optional[subprocess.Popen] = None
@@ -45,7 +46,7 @@ class StreamRecorder:
                 "--stream-segment-threads", "4",
                 "--loglevel", "debug",  # デバッグログを有効化
                 self.url,
-                "best",
+                self.quality,
                 "-O"
             ]
             self.stream_process = subprocess.Popen(

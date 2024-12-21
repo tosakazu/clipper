@@ -86,7 +86,23 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // 設定のデフォルト値と現在値を管理するカスタムフック
+        function useStreamSettings() {
+            const [settings, setSettings] = React.useState(() => {
+                const params = new URLSearchParams(window.location.search);
+                return {
+                    clipDuration: parseInt(params.get('duration')) || 3,
+                    bufferMinutes: parseInt(params.get('buffer')) || 10,
+                    quality: params.get('quality') || 'best',
+                    clipDuration: parseInt(params.get('duration')) || 3
+                };
+            });
+
+            return settings;
+        }
+
         function App() {
+            const settings = useStreamSettings();
             const [streams, setStreams] = React.useState([
                 { id: 1, type: '', url: '', isFullscreen: false, isRecording: false },
                 { id: 2, type: '', url: '', isFullscreen: false, isRecording: false },
@@ -198,7 +214,9 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             url: stream.url,
-                            window_id: id
+                            window_id: id,
+                            buffer_minutes: settings.bufferMinutes,
+                            quality: settings.quality
                         })
                     });
 
@@ -224,7 +242,7 @@
                         body: JSON.stringify({
                             url: stream.url,
                             window_id: id,
-                            duration: 3  // 3分クリップ
+                            duration: settings.clipDuration
                         })
                     });
 
@@ -289,11 +307,18 @@
                                         {stream.isRecording ? '録画停止' : '録画開始'}
                                     </button>
                                     <button
-                                        className={`flex-1 p-2 bg-purple-600 text-white rounded hover:bg-purple-700 ${!stream.isRecording && 'opacity-50 cursor-not-allowed'}`}
+                                        className={`flex-1 p-2 bg-purple-600 text-white rounded hover:bg-purple-700 ${
+                                            (!stream.isRecording || !(streamStatuses[stream.id]?.segment_count > settings.clipDuration)) && 
+                                            'opacity-50 cursor-not-allowed'
+                                        }`}
                                         onClick={() => createClip(stream.id)}
-                                        disabled={!stream.isRecording}
+                                        disabled={!stream.isRecording || !(streamStatuses[stream.id]?.segment_count > settings.clipDuration)}
                                     >
-                                        Clip!
+                                        {stream.isRecording 
+                                            ? streamStatuses[stream.id]?.segment_count > settings.clipDuration
+                                                ? 'Clip!'
+                                                : `動画を取得中...(${streamStatuses[stream.id]?.segment_count || 0}/${settings.clipDuration})`
+                                            : '録画を開始してください'}
                                     </button>
                                 </div>
                             </div>

@@ -76,6 +76,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 class StreamInfo(BaseModel):
     url: str
     window_id: int
+    buffer_minutes: int
+    quality: str
 
 class ClipRequest(BaseModel):
     url: str
@@ -156,7 +158,8 @@ async def start_recording(stream_info: StreamInfo):
         recorder = StreamRecorder(
             url=stream_info.url,
             base_dir=str(base_dir),
-            buffer_minutes=10
+            buffer_minutes=stream_info.buffer_minutes,
+            quality=stream_info.quality
         )
         success = recorder.start()
         

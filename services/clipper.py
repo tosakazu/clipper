@@ -157,7 +157,7 @@ class StreamClipper:
             logger.info(f"Successfully trimmed clip to: {output_path}")
             
             # トリミング情報をJSONLファイルに保存
-            json_path = Path(input_path).with_suffix('.jsonl')
+            json_path = Path("clips/annotations").with_suffix('.jsonl')
             trim_info = {
                 'timestamp': datetime.now().isoformat(),
                 'start_time': start_time,
