@@ -21,7 +21,7 @@ http://localhost:8866/
 
 - clips以下
     - .mp4が直近3分動画
-    - .jsonlが切り抜き情報
+    - annotations.jsonlが切り抜き情報
 - clips/trimmed以下
     - .mp4に時間指定の切り抜き動画
 
