@@ -238,6 +238,8 @@ async def get_clip(filename: str):
     """クリップファイルを取得するエンドポイント"""
     try:
         file_path = CLIPS_DIR / os.path.basename(filename)
+        if not file_path.resolve().parent == CLIPS_DIR.resolve():
+            raise HTTPException(status_code=403, detail="Access denied")
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Clip not found")
         return FileResponse(file_path)
@@ -253,6 +255,8 @@ TRIMMED_DIR = CLIPS_DIR / "trimmed"
 async def get_trimmed_file(filename: str):
     """トリミング済みクリップを提供するエンドポイント"""
     file_path = TRIMMED_DIR / os.path.basename(filename)
+    if not file_path.resolve().parent == TRIMMED_DIR.resolve():
+        raise HTTPException(status_code=403, detail="Access denied")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Trimmed clip not found")
     return FileResponse(file_path)
