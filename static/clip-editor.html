@@ -235,6 +235,7 @@
       const [endTime, setEndTime] = useState(0);
       const [quality, setQuality] = useState("default");
       const [isRangePlayback, setIsRangePlayback] = useState(false);
+      const [outputFilename, setOutputFilename] = useState("");
 
       useEffect(() => {
         if (videoRef.current) {
@@ -312,7 +313,12 @@
         if (!clipPath) return;
 
         const timestamp = new Date().getTime();
-        const outputName = `trimmed_${timestamp}.mp4`;
+        const trimmedFilename = outputFilename.trim();
+        const outputName = trimmedFilename
+          ? (trimmedFilename.toLowerCase().endsWith('.mp4') 
+              ? trimmedFilename 
+              : `${trimmedFilename}.mp4`)
+          : `trimmed_${timestamp}.mp4`;
 
         try {
           const response = await fetch('/api/trim-clip', {
@@ -414,7 +420,7 @@
               </div>
 
               <div className="flex gap-4 items-center">
-              <div className="select-wrapper">
+                <div className="select-wrapper">
                   <select
                     value={quality}
                     onChange={(e) => setQuality(e.target.value)}
@@ -427,18 +433,28 @@
                     ))}
                   </select>
                 </div>
+
+                <input
+                  type="text"
+                  value={outputFilename}
+                  onChange={(e) => setOutputFilename(e.target.value)}
+                  placeholder="出力ファイル名（省略可）"
+                  className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                />
+
                 <button 
-                  className="flex-1 bg-green-600 hover:bg-green-700 py-3 rounded-lg font-medium transition-colors"
+                  className="bg-green-600 hover:bg-green-700 py-3 px-6 rounded-lg font-medium transition-colors"
                   onClick={handleTrim}
                 >
                   トリミング
                 </button>
               </div>
-              </div>
+            </div>
           </div>
         </div>
       );
     }
+
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<ClipEditor />);
   </script>
