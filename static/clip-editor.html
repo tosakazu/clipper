@@ -364,16 +364,16 @@
             <div className="control-buttons">
               <div className="button-group">
                 <button 
-                  onClick={handleSetStartTime}
-                  className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded text-sm transition-colors"
-                >
-                  開始点に設定
-                </button>
-                <button 
                   onClick={() => handleSeek(startTime)}
                   className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm transition-colors"
                 >
                   開始点へ
+                </button>
+                <button 
+                  onClick={handleSetStartTime}
+                  className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded text-sm transition-colors"
+                >
+                  開始点に設定
                 </button>
               </div>
               
@@ -388,16 +388,16 @@
 
               <div className="button-group">
                 <button 
-                  onClick={handleSetEndTime}
-                  className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded text-sm transition-colors"
-                >
-                  終了点に設定
-                </button>
-                <button 
                   onClick={() => handleSeek(endTime)}
                   className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm transition-colors"
                 >
                   終了点へ
+                </button>
+                <button 
+                  onClick={handleSetEndTime}
+                  className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded text-sm transition-colors"
+                >
+                  終了点に設定
                 </button>
               </div>
             </div>
