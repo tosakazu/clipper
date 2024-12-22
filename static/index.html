@@ -36,8 +36,11 @@
             overflow: hidden;
         }
         .fullscreen {
-            grid-column: 1 / -1;
-            grid-row: 1 / -1;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
             z-index: 20;
         }
         .url-input {
@@ -94,7 +97,6 @@
                     clipDuration: parseInt(params.get('duration')) || 3,
                     bufferMinutes: parseInt(params.get('buffer')) || 10,
                     quality: params.get('quality') || 'best',
-                    clipDuration: parseInt(params.get('duration')) || 3
                 };
             });
 
@@ -285,6 +287,12 @@
                         >
                             <div className="url-input">
                                 <div className="flex gap-2 mb-2">
+                                    <button
+                                        onClick={() => toggleFullscreen(stream.id)}
+                                        className="p-2 bg-gray-800 text-white rounded hover:bg-gray-700"
+                                    >
+                                        {stream.isFullscreen ? "縮小" : "拡大"}
+                                    </button>
                                     <input
                                         type="text"
                                         value={stream.url}
@@ -292,12 +300,6 @@
                                         placeholder="YouTube または Twitch の URL を入力"
                                         className="flex-grow p-2 bg-gray-800 text-white rounded border border-gray-700"
                                     />
-                                    <button
-                                        onClick={() => toggleFullscreen(stream.id)}
-                                        className="p-2 bg-gray-800 text-white rounded hover:bg-gray-700"
-                                    >
-                                        {stream.isFullscreen ? "縮小" : "拡大"}
-                                    </button>
                                 </div>
                                 <div className="flex gap-2">
                                     <button
@@ -308,16 +310,16 @@
                                     </button>
                                     <button
                                         className={`flex-1 p-2 bg-purple-600 text-white rounded hover:bg-purple-700 ${
-                                            (!stream.isRecording || !(streamStatuses[stream.id]?.segment_count > settings.clipDuration)) && 
+                                            (!stream.isRecording || !(streamStatuses[stream.id]?.segment_count >= 1)) && 
                                             'opacity-50 cursor-not-allowed'
                                         }`}
                                         onClick={() => createClip(stream.id)}
-                                        disabled={!stream.isRecording || !(streamStatuses[stream.id]?.segment_count > settings.clipDuration)}
+                                        disabled={!stream.isRecording || !(streamStatuses[stream.id]?.segment_count >= 1)}
                                     >
                                         {stream.isRecording 
-                                            ? streamStatuses[stream.id]?.segment_count > settings.clipDuration
+                                            ? streamStatuses[stream.id]?.segment_count >= 0
                                                 ? 'Clip!'
-                                                : `動画を取得中...(${streamStatuses[stream.id]?.segment_count || 0}/${settings.clipDuration})`
+                                                : `動画を取得中...`
                                             : '録画を開始してください'}
                                     </button>
                                 </div>

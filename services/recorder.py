@@ -7,6 +7,7 @@ from typing import Optional
 import logging
 from datetime import datetime
 import shutil
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,10 +26,9 @@ class StreamRecorder:
         self.monitor_thread: Optional[threading.Thread] = None
         self.last_segment_time = time.time()
         self.logger = logging.getLogger(f'StreamRecorder-{base_dir}')
-        
+
         # 既存のセグメントディレクトリを削除
         shutil.rmtree(self.segments_dir, ignore_errors=True)
-
         os.makedirs(self.segments_dir, exist_ok=True)
 
     def start(self) -> bool:
@@ -38,10 +38,9 @@ class StreamRecorder:
 
         self.logger.info(f"Starting recording for URL: {self.url}")
         self.is_recording = True
-        
+
         try:
             # streamlinkプロセスの開始
-            # start メソッド内の streamlink_cmd を変更:
             streamlink_cmd = [
                 "streamlink",
                 "--stream-segment-threads", "4",
@@ -56,9 +55,8 @@ class StreamRecorder:
             self.stream_process = subprocess.Popen(
                 streamlink_cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
             )
-            
+
             self.logger.info("Streamlink process started successfully")
 
             # ffmpegプロセスの開始
@@ -76,9 +74,8 @@ class StreamRecorder:
                 ffmpeg_cmd,
                 stdin=self.stream_process.stdout,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
             )
-            
+
             self.logger.info("FFmpeg process started successfully")
 
             # クリーンアップスレッドの開始
@@ -101,12 +98,12 @@ class StreamRecorder:
     def stop(self):
         self.logger.info("Stopping recording")
         self.is_recording = False
-        
+
         if self.stream_process:
             self.stream_process.terminate()
             self.stream_process.wait()
             self.stream_process = None
-            
+
         if self.ffmpeg_process:
             self.ffmpeg_process.terminate()
             self.ffmpeg_process.wait()
@@ -120,7 +117,7 @@ class StreamRecorder:
                 # セグメントファイルの一覧を取得して古い順にソート
                 segment_files = glob.glob(os.path.join(self.segments_dir, "out*.ts"))
                 segment_files.sort()
-                
+
                 # バッファサイズを超えているか確認
                 if len(segment_files) > self.buffer_minutes:
                     files_to_remove = segment_files[:-self.buffer_minutes]
@@ -132,7 +129,7 @@ class StreamRecorder:
                             self.logger.error(f"Error removing file {f}: {e}")
             except Exception as e:
                 self.logger.error(f"Error in cleanup thread: {e}")
-            
+
             # 10秒待機
             time.sleep(10)
 
@@ -153,18 +150,24 @@ class StreamRecorder:
                     latest_file = max(segment_files, key=os.path.getmtime)
                     current_time = time.time()
                     last_modified = os.path.getmtime(latest_file)
-                    
-                    if current_time - last_modified > 180:  # 3分に延長
+
+                    # 3分以上更新がない
+                    if current_time - last_modified > 180:
                         self.logger.warning("No new segments - but waiting longer before restart")
                         error_count += 1
-                        if error_count >= 3:  # 3回連続でタイムアウトしたら再起動
+
+                        # 詳細なエラー診断を実施
+                        self._diagnose_issues()
+
+                        # 3回連続でタイムアウトしたら再起動
+                        if error_count >= 3:
                             self.logger.info("Attempting restart after multiple timeouts")
                             self._restart_recording()
                             error_count = 0
                     else:
                         error_count = 0
 
-                # プロセスの出力をチェック
+                # プロセスの出力をチェック (ここではデバッグ用に読み取るだけ)
                 if self.stream_process and self.stream_process.stderr:
                     stderr_line = self.stream_process.stderr.readline().decode().strip()
                     if stderr_line:
@@ -207,15 +210,16 @@ class StreamRecorder:
                 "--retry-max", "10",
                 "--retry-streams", "60",
                 "--stream-timeout", "60",
+                "--ringbuffer-size", "32M",
                 self.url,
                 self.quality,
                 "-O"
             ]
-            
+
             self.stream_process = subprocess.Popen(
                 streamlink_cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                bufsize=10*1024*1024
             )
 
             ffmpeg_cmd = [
@@ -223,21 +227,22 @@ class StreamRecorder:
                 "-i", "pipe:0",
                 "-c", "copy",
                 "-f", "segment",
+                "-max_delay", "5000000",
                 "-segment_time", "60",
                 "-segment_format", "mpegts",
                 "-reset_timestamps", "1",
                 os.path.join(self.segments_dir, "out%05d.ts")
             ]
-            
+
             self.ffmpeg_process = subprocess.Popen(
                 ffmpeg_cmd,
                 stdin=self.stream_process.stdout,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                bufsize=10*1024*1024
             )
 
             self.logger.info("Recording successfully restarted")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to restart recording: {e}")
 
@@ -247,7 +252,7 @@ class StreamRecorder:
             segment_files = glob.glob(os.path.join(self.segments_dir, "out*.ts"))
             total_size = sum(os.path.getsize(f) for f in segment_files if os.path.exists(f))
             latest_time = max(os.path.getmtime(f) for f in segment_files) if segment_files else None
-            
+
             return {
                 "is_recording": self.is_recording,
                 "segment_count": len(segment_files),
@@ -262,3 +267,79 @@ class StreamRecorder:
                 "total_size_mb": 0,
                 "last_segment_time": None
             }
+
+    def _diagnose_issues(self):
+        """
+        streamlink, ffmpeg, パイプが止まっている原因を特定しやすいように
+        ログ・ステータスをチェックする
+        """
+        self.logger.info("Diagnosing issues in the streaming pipeline...")
+        # 1) streamlink 側のエラーを調べる
+        self._check_streamlink_errors()
+        # 2) ffmpeg 側のエラーを調べる
+        self._check_ffmpeg_errors()
+        # 3) プロセスのステータス(終了コード)を確認
+        self._check_exit_codes()
+        # 4) パイプが途切れていないかの簡易チェック
+        self._check_pipe_blocking()
+
+    def _check_streamlink_errors(self):
+        """streamlink の stderr ログを読み取り、典型的なエラーメッセージがないかを確認する"""
+        if not self.stream_process or not self.stream_process.stderr:
+            return
+        lines = []
+        while True:
+            line = self.stream_process.stderr.readline().decode(errors='replace')
+            if not line:
+                break
+            lines.append(line.strip())
+        if lines:
+            self.logger.debug("Streamlink stderr lines during diagnosis:")
+            for line in lines:
+                self.logger.debug(line)
+                if re.search(r"(timeout|error|Failed to read|Connection refused|Broken pipe|No data)", line, re.IGNORECASE):
+                    self.logger.warning(f"Possible streamlink issue detected: {line}")
+
+    def _check_ffmpeg_errors(self):
+        """ffmpeg の stderr ログを読み取り、典型的なエラーメッセージがないかを確認する"""
+        if not self.ffmpeg_process or not self.ffmpeg_process.stderr:
+            return
+        lines = []
+        while True:
+            line = self.ffmpeg_process.stderr.readline().decode(errors='replace')
+            if not line:
+                break
+            lines.append(line.strip())
+        if lines:
+            self.logger.debug("FFmpeg stderr lines during diagnosis:")
+            for line in lines:
+                self.logger.debug(line)
+                if re.search(r"(Invalid data|Could not write|Broken pipe|Stream ends prematurely|error)", line, re.IGNORECASE):
+                    self.logger.warning(f"Possible FFmpeg issue detected: {line}")
+
+    def _check_exit_codes(self):
+        """プロセスのステータスを見て、終了していればコードをログに出す"""
+        if self.stream_process:
+            code = self.stream_process.poll()
+            if code is not None:
+                self.logger.warning(f"Streamlink process exited unexpectedly with code: {code}")
+        if self.ffmpeg_process:
+            code = self.ffmpeg_process.poll()
+            if code is not None:
+                self.logger.warning(f"FFmpeg process exited unexpectedly with code: {code}")
+
+    def _check_pipe_blocking(self):
+        """
+        ストリームパイプにデータが流れているか簡易チェック。
+        ここではプロセスが動いているか、ファイルサイズが増えているかなども
+        追加で確認すると良い。
+        """
+        if self.stream_process and self.stream_process.poll() is None:
+            self.logger.debug("Streamlink process is still running (no immediate pipe block detected).")
+        else:
+            self.logger.warning("Streamlink process is not running. Pipe might be broken or streamlink crashed.")
+
+        if self.ffmpeg_process and self.ffmpeg_process.poll() is None:
+            self.logger.debug("FFmpeg process is still running (no immediate pipe block detected).")
+        else:
+            self.logger.warning("FFmpeg process is not running. Pipe might be broken or ffmpeg crashed.")

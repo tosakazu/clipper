@@ -34,7 +34,7 @@ class StreamClipper:
 
             if len(segment_files) < duration:
                 logger.error(f"Not enough segments: found {len(segment_files)}, need {duration}")
-                return False
+                # return False
 
             # 必要なセグメントの選択
             segments_to_use = segment_files[-duration:]
@@ -70,8 +70,7 @@ class StreamClipper:
             # 連結後の動画の長さを取得
             total_duration = self.get_video_duration(temp_output)
             trim_seconds = (duration - 1) * 60 # 最初に+1しているので-1する
-            if total_duration <= trim_seconds:
-                raise ValueError("Trim duration is longer than or equal to the total duration of the video.")
+            trim_seconds = min(trim_seconds, total_duration)  # 最大値を動画の長さに制限
 
             # 切り抜き範囲を計算
             start_time = total_duration - trim_seconds
