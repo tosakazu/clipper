@@ -41,10 +41,14 @@ class StreamRecorder:
         
         try:
             # streamlinkプロセスの開始
+            # start メソッド内の streamlink_cmd を変更:
             streamlink_cmd = [
                 "streamlink",
                 "--stream-segment-threads", "4",
-                "--loglevel", "debug",  # デバッグログを有効化
+                "--loglevel", "debug",
+                "--retry-max", "10",           # リトライ回数を増やす
+                "--retry-streams", "60",       # ストリーム再試行の待機時間を60秒に
+                "--stream-timeout", "60",      # ストリームタイムアウトを60秒に
                 self.url,
                 self.quality,
                 "-O"
@@ -133,19 +137,34 @@ class StreamRecorder:
             time.sleep(10)
 
     def _monitor_recording(self):
+        error_count = 0
         while self.is_recording:
             try:
-                # 最新のセグメントファイルをチェック
+                # プロセスチェック
+                if self.stream_process and self.stream_process.poll() is not None:
+                    self.logger.warning("Streamlink process ended - waiting before restart")
+                    time.sleep(10)  # 少し待機してから再起動
+                    self._restart_recording()
+                    continue
+
+                # セグメントファイルのチェック
                 segment_files = glob.glob(os.path.join(self.segments_dir, "out*.ts"))
                 if segment_files:
                     latest_file = max(segment_files, key=os.path.getmtime)
                     current_time = time.time()
                     last_modified = os.path.getmtime(latest_file)
                     
-                    if current_time - last_modified > 120:  # 2分以上更新がない
-                        self.logger.warning("No new segments created in the last 2 minutes")
-                
-                # プロセスのエラー出力をチェック
+                    if current_time - last_modified > 180:  # 3分に延長
+                        self.logger.warning("No new segments - but waiting longer before restart")
+                        error_count += 1
+                        if error_count >= 3:  # 3回連続でタイムアウトしたら再起動
+                            self.logger.info("Attempting restart after multiple timeouts")
+                            self._restart_recording()
+                            error_count = 0
+                    else:
+                        error_count = 0
+
+                # プロセスの出力をチェック
                 if self.stream_process and self.stream_process.stderr:
                     stderr_line = self.stream_process.stderr.readline().decode().strip()
                     if stderr_line:
@@ -160,6 +179,67 @@ class StreamRecorder:
                 self.logger.error(f"Error in monitoring thread: {e}")
 
             time.sleep(5)
+
+    def _restart_recording(self):
+        """録画プロセスを再起動"""
+        self.logger.info("Attempting to restart recording")
+        try:
+            # 既存のプロセスを停止
+            if self.ffmpeg_process:
+                self.ffmpeg_process.terminate()
+                try:
+                    self.ffmpeg_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.ffmpeg_process.kill()
+
+            if self.stream_process:
+                self.stream_process.terminate()
+                try:
+                    self.stream_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.stream_process.kill()
+
+            # start メソッドと同じコマンドで再起動
+            streamlink_cmd = [
+                "streamlink",
+                "--stream-segment-threads", "4",
+                "--loglevel", "debug",
+                "--retry-max", "10",
+                "--retry-streams", "60",
+                "--stream-timeout", "60",
+                self.url,
+                self.quality,
+                "-O"
+            ]
+            
+            self.stream_process = subprocess.Popen(
+                streamlink_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-i", "pipe:0",
+                "-c", "copy",
+                "-f", "segment",
+                "-segment_time", "60",
+                "-segment_format", "mpegts",
+                "-reset_timestamps", "1",
+                os.path.join(self.segments_dir, "out%05d.ts")
+            ]
+            
+            self.ffmpeg_process = subprocess.Popen(
+                ffmpeg_cmd,
+                stdin=self.stream_process.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+
+            self.logger.info("Recording successfully restarted")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to restart recording: {e}")
 
     def get_status(self) -> dict:
         """録画の状態を取得"""
