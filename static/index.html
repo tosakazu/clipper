@@ -110,10 +110,10 @@
         function App() {
             const settings = useStreamSettings();
             const [streams, setStreams] = React.useState([
-                { id: 1, type: '', url: '', isFullscreen: false, isRecording: false },
-                { id: 2, type: '', url: '', isFullscreen: false, isRecording: false },
-                { id: 3, type: '', url: '', isFullscreen: false, isRecording: false },
-                { id: 4, type: '', url: '', isFullscreen: false, isRecording: false }
+                { id: 1, type: '', url: '', isFullscreen: false, isRecording: false, isClipping: false },
+                { id: 2, type: '', url: '', isFullscreen: false, isRecording: false, isClipping: false },
+                { id: 3, type: '', url: '', isFullscreen: false, isRecording: false, isClipping: false },
+                { id: 4, type: '', url: '', isFullscreen: false, isRecording: false, isClipping: false }
             ]);
             
             const [streamStatuses, setStreamStatuses] = React.useState({});
@@ -241,6 +241,11 @@
                 const stream = streams.find(s => s.id === id);
                 if (!stream.isRecording) return;
 
+                setStreams(streams.map(s => 
+                    s.id === id ? { ...s, isClipping: true } : s
+                ));
+
+
                 try {
                     const response = await fetch('/api/create-clip', {
                         method: 'POST',
@@ -259,6 +264,11 @@
                     }
                 } catch (error) {
                     console.error('Clip creation error:', error);
+                } finally {
+                    // 処理完了時にisClippingをfalseに戻す
+                    setStreams(streams.map(s => 
+                        s.id === id ? { ...s, isClipping: false } : s
+                    ));
                 }
             };
 
@@ -314,16 +324,18 @@
                                     </button>
                                     <button
                                         className={`flex-1 p-2 bg-purple-600 text-white rounded hover:bg-purple-700 ${
-                                            (!stream.isRecording || !(streamStatuses[stream.id]?.segment_count >= 1)) && 
+                                            (!stream.isRecording || !(streamStatuses[stream.id]?.segment_count >= 1) || stream.isClipping) && 
                                             'opacity-50 cursor-not-allowed'
                                         }`}
                                         onClick={() => createClip(stream.id)}
-                                        disabled={!stream.isRecording || !(streamStatuses[stream.id]?.segment_count >= 1)}
+                                        disabled={!stream.isRecording || !(streamStatuses[stream.id]?.segment_count >= 1) || stream.isClipping}
                                     >
-                                        {stream.isRecording 
+                                    {stream.isClipping 
+                                        ? 'クリップ作成中...'
+                                        : stream.isRecording 
                                             ? streamStatuses[stream.id]?.segment_count >= 0
                                                 ? 'Clip!'
-                                                : `動画を取得中...`
+                                                : '動画を取得中...'
                                             : '録画を開始してください'}
                                     </button>
                                 </div>

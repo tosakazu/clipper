@@ -236,6 +236,7 @@
       const [quality, setQuality] = useState("default");
       const [isRangePlayback, setIsRangePlayback] = useState(false);
       const [outputFilename, setOutputFilename] = useState("");
+      const [isTriming, setIsTriming] = useState(false);
 
       useEffect(() => {
         if (videoRef.current) {
@@ -310,7 +311,9 @@
       };
 
       const handleTrim = async () => {
-        if (!clipPath) return;
+        if (!clipPath || isTriming) return;
+
+        setIsTriming(true);
 
         const timestamp = new Date().getTime();
         const trimmedFilename = outputFilename.trim();
@@ -342,6 +345,8 @@
         } catch (error) {
           console.error("Trimming error:", error);
           alert("エラーが発生しました");
+        } finally {
+          setIsTriming(false);
         }
       };
 
@@ -443,10 +448,13 @@
                 />
 
                 <button 
-                  className="bg-green-600 hover:bg-green-700 py-3 px-6 rounded-lg font-medium transition-colors"
+                  className={`bg-green-600 hover:bg-green-700 py-3 px-6 rounded-lg font-medium transition-colors ${
+                    isTriming && 'opacity-50 cursor-not-allowed'
+                  }`}
                   onClick={handleTrim}
+                  disabled={isTriming}
                 >
-                  トリミング
+                  {isTriming ? 'トリミング中...' : 'トリミング'}
                 </button>
               </div>
             </div>
